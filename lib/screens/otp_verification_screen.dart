@@ -1,14 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:ofocus/screens/login_screen.dart';
 import 'package:ofocus/screens/reset_password_screen.dart';
+import 'package:ofocus/services/auth_service.dart';
+import 'package:ofocus/utils/app_toast.dart';
 import 'package:ofocus/widgets/password_recovery/recovery_shared.dart';
 import 'package:ofocus/theme/app_colors.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
-  const OtpVerificationScreen({super.key, required this.email});
+  const OtpVerificationScreen({
+    super.key,
+    required this.email,
+    this.expiresInMinutes = 5,
+  });
 
   final String email;
+  final int expiresInMinutes;
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
@@ -17,9 +27,15 @@ class OtpVerificationScreen extends StatefulWidget {
 class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   static const _otpLength = 6;
 
+  final _authService = AuthService();
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
+  Timer? _timer;
+  late int _secondsRemaining;
   String? _otpError;
+  bool _isLoading = false;
+  bool _isResending = false;
+  bool _expiredHandled = false;
 
   @override
   void initState() {
@@ -30,10 +46,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       node.addListener(() => setState(() {}));
       return node;
     });
+    _secondsRemaining = widget.expiresInMinutes * 60;
+    _startTimer();
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     for (final controller in _controllers) {
       controller.dispose();
     }
@@ -44,6 +63,45 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   }
 
   String get _otp => _controllers.map((c) => c.text).join();
+
+  String get _formattedCountdown {
+    final minutes = _secondsRemaining ~/ 60;
+    final seconds = _secondsRemaining % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        _onOtpExpired();
+        return;
+      }
+      setState(() => _secondsRemaining--);
+    });
+  }
+
+  void _resetTimer(int expiresInMinutes) {
+    setState(() => _secondsRemaining = expiresInMinutes * 60);
+    _startTimer();
+  }
+
+  void _onOtpExpired() {
+    if (_expiredHandled || !mounted) return;
+    _expiredHandled = true;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(
+          initialToastMessage:
+              'Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới để đặt lại mật khẩu.',
+          initialToastStatus: AppToastStatus.warning,
+        ),
+      ),
+      (_) => false,
+    );
+  }
 
   void _clearOtpError() {
     if (_otpError != null) {
@@ -63,68 +121,214 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   void _onDigitChanged(int index, String value) {
     _clearOtpError();
-    if (value.length > 1) {
-      _controllers[index].text = value.substring(value.length - 1);
-      _controllers[index].selection = TextSelection.collapsed(
-        offset: _controllers[index].text.length,
-      );
+
+    final digitsOnly = value.replaceAll(RegExp(r'\D'), '');
+    if (digitsOnly.length > 1) {
+      _fillOtpFrom(index, digitsOnly);
+      setState(() {});
+      return;
     }
 
-    if (value.isNotEmpty && index < _otpLength - 1) {
-      _focusNodes[index + 1].requestFocus();
+    if (digitsOnly.isNotEmpty) {
+      _controllers[index].text = digitsOnly;
+      _controllers[index].selection = const TextSelection.collapsed(offset: 1);
+      if (index < _otpLength - 1) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _focusNodes[index + 1].requestFocus();
+        });
+      }
     }
-    if (value.isEmpty && index > 0) {
-      _focusNodes[index - 1].requestFocus();
-    }
+
     setState(() {});
   }
 
-  void _submit() {
+  void _fillOtpFrom(int startIndex, String digits) {
+    for (var i = 0; i < digits.length && startIndex + i < _otpLength; i++) {
+      _controllers[startIndex + i].text = digits[i];
+    }
+
+    final focusIndex = (startIndex + digits.length).clamp(0, _otpLength - 1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNodes[focusIndex].requestFocus();
+    });
+  }
+
+  void _onBackspaceOnEmpty(int index) {
+    if (index <= 0) return;
+
+    _clearOtpError();
+    final previous = index - 1;
+    _controllers[previous].clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNodes[previous].requestFocus();
+    });
+    setState(() {});
+  }
+
+  Future<void> _submit() async {
+    if (_secondsRemaining <= 0) {
+      _onOtpExpired();
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+
     if (_otp.length != _otpLength) {
       setState(() => _otpError = 'Vui lòng nhập đủ 6 chữ số OTP');
       _focusFirstEmptyOtpBox();
       return;
     }
 
-    setState(() => _otpError = null);
+    setState(() {
+      _otpError = null;
+      _isLoading = true;
+    });
+
+    final result = await _authService.verifyOtp(email: widget.email, otp: _otp);
+
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (!result.isSuccess) {
+      setState(() => _otpError = result.errorMessage ?? 'Mã OTP không hợp lệ');
+      _focusFirstEmptyOtpBox();
+      return;
+    }
+
+    final data = result.data!;
+    if (data.resetToken.isEmpty) {
+      setState(() => _otpError = 'Không nhận được mã đặt lại mật khẩu');
+      return;
+    }
+
+    _timer?.cancel();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ResetPasswordScreen(email: widget.email, otp: _otp),
+        builder: (_) => ResetPasswordScreen(resetToken: data.resetToken),
       ),
     );
   }
 
+  Future<void> _resendOtp() async {
+    if (_isResending || _isLoading || _secondsRemaining <= 0) return;
+
+    setState(() => _isResending = true);
+
+    final result = await _authService.forgotPassword(email: widget.email);
+
+    if (!mounted) return;
+
+    setState(() => _isResending = false);
+
+    if (!result.isSuccess) {
+      showAppToast(
+        result.errorMessage ?? 'Không thể gửi lại OTP',
+        status: AppToastStatus.error,
+      );
+      return;
+    }
+
+    for (final controller in _controllers) {
+      controller.clear();
+    }
+    _focusNodes.first.requestFocus();
+    _resetTimer(result.data!.expiresInMinutes);
+    _clearOtpError();
+    showAppToast(result.data!.message, status: AppToastStatus.success);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return RecoveryScaffold(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    final expired = _secondsRemaining <= 0;
+
+    return Stack(
+      children: [
+        RecoveryScaffold(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const RecoveryStepHeader(
+                step: 2,
+                variant: RecoveryStepperVariant.bar,
+              ),
+              const SizedBox(height: 16),
+              RecoverySectionTitle(
+                title: 'Xác thực mã OTP',
+                titleSize: 28,
+                subtitle: 'Mã số gồm 6 chữ số vừa được gửi an toàn đến\nhòm thư học viên:',
+              ),
+              const SizedBox(height: 8),
+              _EmailChip(
+                email: widget.email,
+                onChange: _isLoading ? null : () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(height: 8),
+              _OtpCountdownBanner(
+                countdown: _formattedCountdown,
+                expired: expired,
+              ),
+              const SizedBox(height: 8),
+              _OtpFormCard(
+                controllers: _controllers,
+                focusNodes: _focusNodes,
+                errorText: _otpError,
+                onDigitChanged: _onDigitChanged,
+                onBackspaceOnEmpty: _onBackspaceOnEmpty,
+                onSubmit: expired ? null : _submit,
+                onResend: _resendOtp,
+                isResending: _isResending,
+                canResend: !expired && !_isLoading,
+              ),
+              const SizedBox(height: 16),
+              const StudentSupportCard(),
+            ],
+          ),
+        ),
+        if (_isLoading)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0x33000000),
+              child: Center(
+                child: CircularProgressIndicator(color: Color(0xFF4F46E5)),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _OtpCountdownBanner extends StatelessWidget {
+  const _OtpCountdownBanner({required this.countdown, required this.expired});
+
+  final String countdown;
+  final bool expired;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: expired ? RecoveryColors.errorFill : RecoveryColors.inputBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const RecoveryStepHeader(
-            step: 2,
-            variant: RecoveryStepperVariant.bar,
+          RecoverySvgIcon(expired ? 'c5e8c' : '0371b', width: 14, height: 14),
+          const SizedBox(width: 8),
+          Text(
+            expired ? 'Mã OTP đã hết hạn' : 'Mã OTP hết hạn sau $countdown',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: expired ? RecoveryColors.error : RecoveryColors.primary,
+            ),
           ),
-          const SizedBox(height: 16),
-          RecoverySectionTitle(
-            title: 'Xác thực mã OTP',
-            titleSize: 28,
-            subtitle: 'Mã số gồm 6 chữ số vừa được gửi an toàn đến\nhòm thư học viên:',
-          ),
-          const SizedBox(height: 8),
-          _EmailChip(
-            email: widget.email,
-            onChange: () => Navigator.of(context).pop(),
-          ),
-          const SizedBox(height: 8),
-          _OtpFormCard(
-            controllers: _controllers,
-            focusNodes: _focusNodes,
-            errorText: _otpError,
-            onDigitChanged: _onDigitChanged,
-            onSubmit: _submit,
-          ),
-          const SizedBox(height: 16),
-          const StudentSupportCard(),
         ],
       ),
     );
@@ -132,10 +336,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 }
 
 class _EmailChip extends StatelessWidget {
-  const _EmailChip({required this.email, required this.onChange});
+  const _EmailChip({required this.email, this.onChange});
 
   final String email;
-  final VoidCallback onChange;
+  final VoidCallback? onChange;
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +373,9 @@ class _EmailChip extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.24,
-                  color: RecoveryColors.success,
+                  color: onChange == null
+                      ? RecoveryColors.muted
+                      : RecoveryColors.success,
                 ),
               ),
             ),
@@ -185,15 +391,23 @@ class _OtpFormCard extends StatelessWidget {
     required this.controllers,
     required this.focusNodes,
     required this.onDigitChanged,
-    required this.onSubmit,
+    required this.onBackspaceOnEmpty,
+    this.onSubmit,
+    this.onResend,
     this.errorText,
+    this.isResending = false,
+    this.canResend = true,
   });
 
   final List<TextEditingController> controllers;
   final List<FocusNode> focusNodes;
   final void Function(int index, String value) onDigitChanged;
-  final VoidCallback onSubmit;
+  final void Function(int index) onBackspaceOnEmpty;
+  final VoidCallback? onSubmit;
+  final VoidCallback? onResend;
   final String? errorText;
+  final bool isResending;
+  final bool canResend;
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +455,7 @@ class _OtpFormCard extends StatelessWidget {
                     hasValue: hasValue,
                     hasError: hasError,
                     onChanged: (value) => onDigitChanged(index, value),
+                    onBackspaceOnEmpty: () => onBackspaceOnEmpty(index),
                   ),
                 ),
               );
@@ -263,21 +478,26 @@ class _OtpFormCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const RecoverySvgIcon('0371b', width: 10.67, height: 10.67),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Gửi lại ngay',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.24,
-                      color: RecoveryColors.primary,
+              GestureDetector(
+                onTap: canResend && !isResending ? onResend : null,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const RecoverySvgIcon('0371b', width: 10.67, height: 10.67),
+                    const SizedBox(width: 4),
+                    Text(
+                      isResending ? 'Đang gửi lại...' : 'Gửi lại ngay',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.24,
+                        color: canResend && !isResending
+                            ? RecoveryColors.primary
+                            : RecoveryColors.muted,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -294,6 +514,7 @@ class _OtpBox extends StatelessWidget {
     required this.hasFocus,
     required this.hasValue,
     required this.onChanged,
+    this.onBackspaceOnEmpty,
     this.hasError = false,
   });
 
@@ -302,6 +523,7 @@ class _OtpBox extends StatelessWidget {
   final bool hasFocus;
   final bool hasValue;
   final ValueChanged<String> onChanged;
+  final VoidCallback? onBackspaceOnEmpty;
   final bool hasError;
 
   @override
@@ -316,14 +538,14 @@ class _OtpBox extends StatelessWidget {
               color: hasError
                   ? RecoveryColors.errorFill
                   : hasFocus
-                      ? Colors.white
-                      : RecoveryColors.inputBg,
+                  ? Colors.white
+                  : RecoveryColors.inputBg,
               borderRadius: BorderRadius.circular(8),
               border: hasError
                   ? Border.all(color: RecoveryColors.error, width: 2)
                   : hasFocus
-                      ? Border.all(color: RecoveryColors.primary, width: 2)
-                      : null,
+                  ? Border.all(color: RecoveryColors.primary, width: 2)
+                  : null,
               boxShadow: hasValue && !hasFocus
                   ? const [
                       BoxShadow(
@@ -336,30 +558,41 @@ class _OtpBox extends StatelessWidget {
                   : null,
             ),
           ),
-          TextField(
-            controller: controller,
-            focusNode: focusNode,
-            textAlign: TextAlign.center,
-            keyboardType: TextInputType.number,
-            maxLength: 1,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.56,
-              color: hasValue
-                  ? RecoveryColors.primary
-                  : const Color(0xFFC7C4D8),
+          Focus(
+            onKeyEvent: (node, event) {
+              if (event is! KeyDownEvent) return KeyEventResult.ignored;
+              if (event.logicalKey != LogicalKeyboardKey.backspace) {
+                return KeyEventResult.ignored;
+              }
+              if (controller.text.isEmpty && onBackspaceOnEmpty != null) {
+                onBackspaceOnEmpty!();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              maxLength: 1,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.56,
+                color: hasValue
+                    ? RecoveryColors.primary
+                    : const Color(0xFFC7C4D8),
+              ),
+              decoration: const InputDecoration(
+                counterText: '',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onChanged: onChanged,
             ),
-            decoration: const InputDecoration(
-              counterText: '',
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-            ),
-            onChanged: onChanged,
           ),
-          if (hasFocus && !hasValue)
-            Container(width: 2, height: 24, color: RecoveryColors.primary),
         ],
       ),
     );

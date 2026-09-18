@@ -2,24 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:ofocus/screens/login_screen.dart';
+import 'package:ofocus/services/auth_service.dart';
 import 'package:ofocus/widgets/password_recovery/recovery_shared.dart';
 import 'package:ofocus/theme/app_colors.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   const ResetPasswordScreen({
     super.key,
-    required this.email,
-    required this.otp,
+    required this.resetToken,
   });
 
-  final String email;
-  final String otp;
+  final String resetToken;
 
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
 }
 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
+  final _authService = AuthService();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
   final _passwordFocusNode = FocusNode();
@@ -28,6 +28,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   bool _obscureConfirm = true;
   String? _passwordError;
   String? _confirmError;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -69,7 +70,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     });
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
+
     final password = _passwordController.text;
     final confirm = _confirmController.text;
 
@@ -104,12 +107,31 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     setState(() {
       _passwordError = null;
       _confirmError = null;
+      _isLoading = true;
     });
+
+    final result = await _authService.resetPassword(
+      resetToken: widget.resetToken,
+      newPassword: password,
+    );
+
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (!result.isSuccess) {
+      setState(() {
+        _passwordError = result.errorMessage ?? 'Không thể đặt lại mật khẩu';
+      });
+      _passwordFocusNode.requestFocus();
+      return;
+    }
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const LoginScreen(
-          successMessage: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập.',
+        builder: (_) => LoginScreen(
+          successMessage: result.data?.message ??
+              'Đặt lại mật khẩu thành công. Vui lòng đăng nhập.',
         ),
       ),
       (_) => false,
@@ -118,48 +140,62 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RecoveryScaffold(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const RecoveryStepHeader(
-            step: 3,
-            variant: RecoveryStepperVariant.bar,
+    return Stack(
+      children: [
+        RecoveryScaffold(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const RecoveryStepHeader(
+                step: 3,
+                variant: RecoveryStepperVariant.bar,
+              ),
+              const SizedBox(height: 24),
+              RecoverySectionTitle(
+                title: 'Đặt lại mật khẩu mới',
+                subtitle:
+                    'Mã xác thực đã được kiểm tra thành công. Vui lòng tạo mật\nkhẩu mới an toàn để bảo vệ tài khoản học tập của bạn.',
+                subtitleFontSize: 12,
+              ),
+              const SizedBox(height: 24),
+              _ResetFormCard(
+                passwordController: _passwordController,
+                confirmController: _confirmController,
+                passwordFocusNode: _passwordFocusNode,
+                confirmFocusNode: _confirmFocusNode,
+                passwordError: _passwordError,
+                confirmError: _confirmError,
+                obscurePassword: _obscurePassword,
+                obscureConfirm: _obscureConfirm,
+                onTogglePassword: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                onToggleConfirm: () =>
+                    setState(() => _obscureConfirm = !_obscureConfirm),
+                onPasswordChanged: _onPasswordChanged,
+                onConfirmChanged: _onConfirmChanged,
+                strengthScore: _strengthScore,
+                hasMinLength: _hasMinLength,
+                hasCaseMix: _hasCaseMix,
+                hasDigit: _hasDigit,
+                hasSpecial: _hasSpecial,
+                passwordsMatch: _passwordsMatch,
+                onSubmit: _isLoading ? null : _submit,
+              ),
+              const SizedBox(height: 12),
+              const StudentSupportCard(),
+            ],
           ),
-          const SizedBox(height: 24),
-          RecoverySectionTitle(
-            title: 'Đặt lại mật khẩu mới',
-            subtitle: 'Mã xác thực đã được kiểm tra thành công. Vui lòng tạo mật\nkhẩu mới an toàn để bảo vệ tài khoản học tập của bạn.',
-            subtitleFontSize: 12,
+        ),
+        if (_isLoading)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0x33000000),
+              child: Center(
+                child: CircularProgressIndicator(color: Color(0xFF4F46E5)),
+              ),
+            ),
           ),
-          const SizedBox(height: 24),
-          _ResetFormCard(
-            passwordController: _passwordController,
-            confirmController: _confirmController,
-            passwordFocusNode: _passwordFocusNode,
-            confirmFocusNode: _confirmFocusNode,
-            passwordError: _passwordError,
-            confirmError: _confirmError,
-            obscurePassword: _obscurePassword,
-            obscureConfirm: _obscureConfirm,
-            onTogglePassword: () =>
-                setState(() => _obscurePassword = !_obscurePassword),
-            onToggleConfirm: () =>
-                setState(() => _obscureConfirm = !_obscureConfirm),
-            onPasswordChanged: _onPasswordChanged,
-            onConfirmChanged: _onConfirmChanged,
-            strengthScore: _strengthScore,
-            hasMinLength: _hasMinLength,
-            hasCaseMix: _hasCaseMix,
-            hasDigit: _hasDigit,
-            hasSpecial: _hasSpecial,
-            passwordsMatch: _passwordsMatch,
-            onSubmit: _submit,
-          ),
-          const SizedBox(height: 12),
-          const StudentSupportCard(),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -182,7 +218,7 @@ class _ResetFormCard extends StatelessWidget {
     required this.hasDigit,
     required this.hasSpecial,
     required this.passwordsMatch,
-    required this.onSubmit,
+    this.onSubmit,
     this.passwordError,
     this.confirmError,
   });
@@ -203,7 +239,7 @@ class _ResetFormCard extends StatelessWidget {
   final bool hasDigit;
   final bool hasSpecial;
   final bool passwordsMatch;
-  final VoidCallback onSubmit;
+  final VoidCallback? onSubmit;
   final String? passwordError;
   final String? confirmError;
 

@@ -13,9 +13,16 @@ import 'package:ofocus/layouts/terms_footer.dart';
 import 'package:ofocus/utils/app_toast.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, this.successMessage});
+  const LoginScreen({
+    super.key,
+    this.successMessage,
+    this.initialToastMessage,
+    this.initialToastStatus = AppToastStatus.success,
+  });
 
   final String? successMessage;
+  final String? initialToastMessage;
+  final AppToastStatus initialToastStatus;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -31,11 +38,15 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    final message = widget.successMessage;
-    if (message != null) {
+    final successMessage = widget.successMessage;
+    final initialToast = widget.initialToastMessage;
+    if (successMessage != null || initialToast != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _showMessage(message, status: AppToastStatus.success);
+        if (!mounted) return;
+        if (successMessage != null) {
+          _showMessage(successMessage, status: AppToastStatus.success);
+        } else if (initialToast != null) {
+          _showMessage(initialToast, status: widget.initialToastStatus);
         }
       });
     }

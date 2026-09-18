@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:ofocus/screens/otp_verification_screen.dart';
+import 'package:ofocus/services/auth_service.dart';
+import 'package:ofocus/utils/app_toast.dart';
 import 'package:ofocus/widgets/password_recovery/recovery_shared.dart';
 import 'package:ofocus/theme/app_colors.dart';
 
@@ -15,9 +17,11 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _authService = AuthService();
   late final TextEditingController _emailController;
   final _emailCardKey = GlobalKey<_EmailMethodCardState>();
   String? _emailError;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -37,7 +41,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
+
     final email = _emailController.text.trim();
     if (email.isEmpty) {
       setState(() => _emailError = 'Vui lòng nhập địa chỉ email');
@@ -45,53 +51,94 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       return;
     }
 
-    setState(() => _emailError = null);
+    setState(() {
+      _emailError = null;
+      _isLoading = true;
+    });
+
+    final result = await _authService.forgotPassword(email: email);
+
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (!result.isSuccess) {
+      final message = result.errorMessage ?? 'Gửi OTP thất bại';
+      setState(() => _emailError = message);
+      showAppToast(message, status: AppToastStatus.error);
+      return;
+    }
+
+    final data = result.data!;
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => OtpVerificationScreen(email: email)),
+      MaterialPageRoute(
+        builder: (_) => OtpVerificationScreen(
+          email: email,
+          expiresInMinutes: data.expiresInMinutes,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return RecoveryScaffold(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const RecoveryStepHeader(step: 1),
-          const SizedBox(height: 24),
-          Stack(
-            alignment: Alignment.topCenter,
+    return Stack(
+      children: [
+        RecoveryScaffold(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 0),
-                child: const RecoverySectionTitle(title: 'Quên mật khẩu?'),
+              const RecoveryStepHeader(
+                step: 1,
+                variant: RecoveryStepperVariant.bar,
               ),
+              const SizedBox(height: 24),
+              Stack(
+                alignment: Alignment.topCenter,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 0),
+                    child: const RecoverySectionTitle(title: 'Quên mật khẩu?'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              _EmailMethodCard(
+                key: _emailCardKey,
+                emailController: _emailController,
+                errorText: _emailError,
+                onEmailChanged: _clearEmailError,
+              ),
+              const SizedBox(height: 16),
+              _SecurityNoticeBanner(),
+              const SizedBox(height: 16),
+              RecoveryPrimaryButton(
+                label: 'Gửi mã xác thực OTP',
+                onPressed: _isLoading ? null : _submit,
+              ),
+              const SizedBox(height: 24),
+              Center(
+                child: RecoveryBackToLoginButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const StudentSupportCard(),
             ],
           ),
-          const SizedBox(height: 24),
-          _EmailMethodCard(
-            key: _emailCardKey,
-            emailController: _emailController,
-            errorText: _emailError,
-            onEmailChanged: _clearEmailError,
-          ),
-          const SizedBox(height: 16),
-          _SecurityNoticeBanner(),
-          const SizedBox(height: 16),
-          RecoveryPrimaryButton(
-            label: 'Gửi mã xác thực OTP',
-            onPressed: _submit,
-          ),
-          const SizedBox(height: 24),
-          Center(
-            child: RecoveryBackToLoginButton(
-              onPressed: () => Navigator.of(context).pop(),
+        ),
+        if (_isLoading)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0x33000000),
+              child: Center(
+                child: CircularProgressIndicator(color: Color(0xFF4F46E5)),
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          const StudentSupportCard(),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -118,22 +165,24 @@ class _EmailMethodCardState extends State<_EmailMethodCard> {
   @override
   void initState() {
     super.initState();
-    _focusNode.addListener(_onFieldChanged);
-    widget.emailController.addListener(_onFieldChanged);
+    _focusNode.addListener(_onFocusChanged);
+    widget.emailController.addListener(_onTextChanged);
   }
 
   void focusEmail() => _focusNode.requestFocus();
 
-  void _onFieldChanged() {
+  void _onFocusChanged() => setState(() {});
+
+  void _onTextChanged() {
     widget.onEmailChanged?.call();
     setState(() {});
   }
 
   @override
   void dispose() {
-    _focusNode.removeListener(_onFieldChanged);
+    _focusNode.removeListener(_onFocusChanged);
     _focusNode.dispose();
-    widget.emailController.removeListener(_onFieldChanged);
+    widget.emailController.removeListener(_onTextChanged);
     super.dispose();
   }
 
@@ -302,8 +351,8 @@ class _EmailMethodCardState extends State<_EmailMethodCard> {
                   fillColor: hasError
                       ? AppColors.errorSurface.withValues(alpha: 0.25)
                       : focused
-                          ? Colors.white
-                          : RecoveryColors.inputBg,
+                      ? Colors.white
+                      : RecoveryColors.inputBg,
                   contentPadding: EdgeInsets.fromLTRB(
                     16,
                     15.5,
@@ -312,10 +361,7 @@ class _EmailMethodCardState extends State<_EmailMethodCard> {
                   ),
                   border: _inputBorder(error: hasError),
                   enabledBorder: _inputBorder(error: hasError),
-                  focusedBorder: _inputBorder(
-                    focused: true,
-                    error: hasError,
-                  ),
+                  focusedBorder: _inputBorder(focused: true, error: hasError),
                   errorBorder: _inputBorder(error: true),
                   focusedErrorBorder: _inputBorder(error: true),
                 ),

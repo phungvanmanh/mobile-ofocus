@@ -1,7 +1,11 @@
 # Chay thu cong: GitHub -> Actions -> "iOS IPA Build" -> Run workflow
 #
-# Secrets can (Settings -> Secrets and variables -> Actions):
-#   IOS_P12_BASE64                      - file .p12 (base64)
+# Mac dinh: signed = FALSE (khong can Apple secrets). Dung cho CI / kiem tra build.
+# Dung TestFlight tren iPhone? -> KHONG can workflow signed. Chi can sua App Group tren
+# developer.apple.com roi build lai ban upload TestFlight.
+#
+# Chi bat signed = TRUE khi da them day du Secrets ben duoi:
+##   IOS_P12_BASE64                      - file .p12 (base64)
 #   IOS_P12_PASSWORD                    - mat khau .p12
 #   IOS_PROVISION_PROFILE_MAIN_BASE64   - profile Development/Ad Hoc cho com.example.ofocus
 #   IOS_PROVISION_PROFILE_EXTENSION_BASE64 - profile cho com.example.ofocus.LiveKit-Broadcast-Extension
@@ -20,13 +24,13 @@ on:
   workflow_dispatch:
     inputs:
       signed:
-        description: Build signed IPA (bat de cai iPhone + screen share)
+        description: Build signed IPA (CAN 5 Apple secrets — bo chon neu dung TestFlight)
         type: boolean
-        default: true
+        default: false
       register_app_group:
         description: Dang ky App Group tren Apple Developer (can API key secrets)
         type: boolean
-        default: true
+        default: false
       release_tag:
         description: Upload len GitHub Release (de trong = chi tai artifact)
         required: false
@@ -82,10 +86,16 @@ jobs:
           done
           if [[ "${missing}" -eq 1 ]]; then
             echo ""
-            echo "Huong dan tao base64 tren Windows (PowerShell):"
-            echo '  [Convert]::ToBase64String([IO.File]::ReadAllBytes("duong\dan\file.p12"))'
-            echo '  [Convert]::ToBase64String([IO.File]::ReadAllBytes("duong\dan\profile.mobileprovision"))'
-            echo "Copy 1 dong lien tuc, KHONG xuong dong, roi paste vao GitHub Secret."
+            echo "::error::Ban chua cau hinh Apple signing secrets tren GitHub."
+            echo ""
+            echo "CACH 1 (de nhat — dung TestFlight):"
+            echo "  Actions -> Run workflow -> BO CHON 'signed' -> Run"
+            echo "  (Workflow se build unsigned de kiem tra code; cai iPhone van qua TestFlight.)"
+            echo ""
+            echo "CACH 2 (muon GitHub build IPA signed):"
+            echo "  Them 5 secrets: IOS_TEAM_ID, IOS_P12_BASE64, IOS_P12_PASSWORD,"
+            echo "  IOS_PROVISION_PROFILE_MAIN_BASE64, IOS_PROVISION_PROFILE_EXTENSION_BASE64"
+            echo "  Lay tu developer.apple.com hoac export .p12 tu Mac (xem huong dan trong repo)."
             exit 1
           fi
 

@@ -79,7 +79,7 @@ class RecoveryStepHeader extends StatelessWidget {
   const RecoveryStepHeader({
     super.key,
     required this.step,
-    this.variant = RecoveryStepperVariant.circles,
+    this.variant = RecoveryStepperVariant.bar,
   });
 
   final int step;
@@ -187,7 +187,7 @@ class _StepLabel extends StatelessWidget {
       textAlign: align,
       style: GoogleFonts.inter(
         fontSize: 12,
-        fontWeight: align == TextAlign.start && color == RecoveryColors.primary
+        fontWeight: color == RecoveryColors.primary
             ? FontWeight.w700
             : FontWeight.w500,
         color: color,
@@ -307,6 +307,7 @@ class _BarStepSegment extends StatelessWidget {
   Widget build(BuildContext context) {
     final completed = step < activeStep;
     final active = step == activeStep;
+    final upcoming = step > activeStep;
 
     return Row(
       children: [
@@ -318,8 +319,11 @@ class _BarStepSegment extends StatelessWidget {
                 ? RecoveryColors.success
                 : active
                 ? RecoveryColors.primary
-                : const Color(0xFFE2E7FF),
+                : const Color(0xFFF1F5F9),
             shape: BoxShape.circle,
+            border: upcoming
+                ? Border.all(color: const Color(0xFFE2E8F0))
+                : null,
             boxShadow: active
                 ? [
                     BoxShadow(
@@ -338,7 +342,7 @@ class _BarStepSegment extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: active ? Colors.white : RecoveryColors.body,
+                    color: active ? Colors.white : RecoveryColors.muted,
                   ),
                 ),
         ),
@@ -348,20 +352,18 @@ class _BarStepSegment extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             child: Container(
               height: 6,
-              color: const Color(0xFFE2E7FF),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: completed
-                    ? 1
-                    : active
-                    ? (step == 2 ? 0.67 : 1)
-                    : 0,
-                child: Container(
-                  color: completed
-                      ? RecoveryColors.success
-                      : RecoveryColors.primary,
-                ),
-              ),
+              color: const Color(0xFFE2E8F0),
+              child: completed || active
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: completed ? 1 : 0.5,
+                      child: Container(
+                        color: completed
+                            ? RecoveryColors.success
+                            : RecoveryColors.primary,
+                      ),
+                    )
+                  : null,
             ),
           ),
         ),

@@ -40,7 +40,7 @@ abstract final class ApiConfig {
   //   ApiEnvironment.local  → BE localhost
   //   ApiEnvironment.server → BE production
   // ---------------------------------------------------------------------------
-  static const defaultEnvironment = ApiEnvironment.server;
+  static const defaultEnvironment = ApiEnvironment.local;
   static const _envName = String.fromEnvironment('API_ENV');
   static const _customBaseUrl = String.fromEnvironment('API_BASE_URL');
   static const _serverHost = 'https://api.ofocus.vn';
@@ -84,6 +84,11 @@ abstract final class ApiConfig {
   static String get login => _endpoint('${_paths.authPrefix}/login');
   static String get googleLogin =>
       _endpoint('${_paths.authPrefix}/google-login');
+  static String get forgotPassword =>
+      _endpoint('${_paths.authPrefix}/forgot-password');
+  static String get verifyOtp => _endpoint('${_paths.authPrefix}/verify-otp');
+  static String get resetPassword =>
+      _endpoint('${_paths.authPrefix}/reset-password');
   static String get updateAvatar => _endpoint('users/update-avatar');
   static String get classMine => _endpoint('class/mine');
   static String get classCreate => _endpoint('class');
