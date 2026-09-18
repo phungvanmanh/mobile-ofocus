@@ -1,6 +1,6 @@
 workflows:
   ofocus-android-ios:
-    name: oFocus Android & iOS
+    name: oFocus Android & iOS (CI check)
     max_build_duration: 60
     environment:
       flutter: stable
@@ -22,3 +22,37 @@ workflows:
     artifacts:
       - build/app/outputs/**/*.aab
       - build/ios/iphoneos/*.app
+
+  # Build iOS co ky + App Group — dung workflow nay de cai len iPhone that (screen share).
+  # Setup Codemagic: Team settings -> Code signing identities (certificate + 2 profiles)
+  # + Environment variables group "apple_credentials" (App Store Connect API key).
+  ofocus-ios-device:
+    name: oFocus iOS signed (App Group / Screen Share)
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      ios_signing:
+        distribution_type: development
+        bundle_identifier: com.example.ofocus
+      vars:
+        APP_GROUP_ID: group.com.example.ofocus
+        MAIN_BUNDLE_ID: com.example.ofocus
+        EXTENSION_BUNDLE_ID: com.example.ofocus.LiveKit-Broadcast-Extension
+      groups:
+        - apple_credentials
+    scripts:
+      - name: Register App Group on Apple Developer
+        script: |
+          bash scripts/register_apple_app_group.sh
+      - name: Prepare iOS build
+        script: |
+          bash scripts/ios_build_prepare.sh
+      - name: Set up code signing profiles
+        script: |
+          xcode-project use-profiles
+      - name: Build signed IPA
+        script: |
+          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
