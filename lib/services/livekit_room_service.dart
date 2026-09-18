@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background/flutter_background.dart';
 import 'package:livekit_client/livekit_client.dart';
@@ -96,10 +98,84 @@ class LiveKitRoomService {
       if (!hasCapturePermission) return;
 
       await _ensureAndroidScreenShareBackground();
+      await participant.setScreenShareEnabled(true);
+      onRoomChanged?.call();
+      return;
+    }
+
+    if (lkPlatformIs(PlatformType.iOS)) {
+      final published = await _startIosScreenShare(participant);
+      onRoomChanged?.call();
+      if (!published) {
+        throw StateError(
+          'Không phát được màn hình. Chọn Ofocus rồi bấm "Bắt đầu phát sóng". '
+          'Nếu vẫn lỗi, bật App Groups cho app và extension trong Xcode.',
+        );
+      }
+      return;
     }
 
     await participant.setScreenShareEnabled(true);
     onRoomChanged?.call();
+  }
+
+  Future<bool> _startIosScreenShare(LocalParticipant participant) async {
+    if (participant.isScreenShareEnabled()) return true;
+
+    final room = _room;
+    if (room == null) return false;
+
+    BroadcastManager().shouldPublishTrack = true;
+
+    final completer = Completer<bool>();
+    Timer? timeout;
+    EventsListener<RoomEvent>? publishListener;
+
+    void completeIfPublished() {
+      if (completer.isCompleted) return;
+      if (participant.isScreenShareEnabled()) {
+        completer.complete(true);
+      }
+    }
+
+    void onBroadcastChanged() {
+      completeIfPublished();
+      if (BroadcastManager().isBroadcasting && !participant.isScreenShareEnabled()) {
+        unawaited(
+          participant.setScreenShareEnabled(true).then((_) => completeIfPublished()),
+        );
+      }
+    }
+
+    BroadcastManager().addListener(onBroadcastChanged);
+    publishListener = room.createListener()
+      ..on<LocalTrackPublishedEvent>((event) {
+        if (event.publication.source == TrackSource.screenShareVideo) {
+          completeIfPublished();
+        }
+      });
+
+    timeout = Timer(const Duration(seconds: 60), () {
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
+    });
+
+    try {
+      await participant.setScreenShareEnabled(true);
+      if (BroadcastManager().isBroadcasting) {
+        await participant.setScreenShareEnabled(true);
+      }
+      completeIfPublished();
+      return await completer.future;
+    } catch (error) {
+      debugPrint('[LiveKit] iOS screen share failed: $error');
+      return false;
+    } finally {
+      timeout.cancel();
+      BroadcastManager().removeListener(onBroadcastChanged);
+      publishListener.dispose();
+    }
   }
 
   Future<void> _ensureAndroidScreenShareBackground({bool isRetry = false}) async {

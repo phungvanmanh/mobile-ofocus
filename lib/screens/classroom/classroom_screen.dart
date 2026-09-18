@@ -181,7 +181,7 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
 
       if (!wasEnabled && lkPlatformIs(PlatformType.iOS)) {
         showAppToast(
-          'Chọn Ofocus trong hộp thoại hệ thống, rồi bấm Bắt đầu phát sóng',
+          '1) Chọn Ofocus  2) Bấm "Bắt đầu phát sóng"  3) Quay lại app',
         );
       }
 

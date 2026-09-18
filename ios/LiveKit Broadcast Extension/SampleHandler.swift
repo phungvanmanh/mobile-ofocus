@@ -41,6 +41,34 @@ class SampleHandler: RPBroadcastSampleHandler {
         // User has requested to start the broadcast. Setup info from the UI extension can be supplied but optional.
         frameCount = 0
 
+        guard FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Constants.appGroupIdentifier
+        ) != nil else {
+            let error = NSError(
+                domain: RPRecordingErrorDomain,
+                code: -1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "App Group chưa được cấu hình. Bật App Groups trong Xcode cho app và extension."
+                ]
+            )
+            finishBroadcastWithError(error)
+            return
+        }
+
+        guard clientConnection != nil, uploader != nil else {
+            let error = NSError(
+                domain: RPRecordingErrorDomain,
+                code: -1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Không thể kết nối chia sẻ màn hình. Mở lại app và thử lại."
+                ]
+            )
+            finishBroadcastWithError(error)
+            return
+        }
+
         DarwinNotificationCenter.shared.postNotification(.broadcastStarted)
         openConnection()
     }

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:ofocus/models/classroom_session.dart';
 import 'package:ofocus/router/app_router.dart';
 import 'package:ofocus/services/media_permission_service.dart';
@@ -29,22 +31,102 @@ class _ClassroomWaitingScreenState extends State<ClassroomWaitingScreen> {
   bool _cameraOn = true;
   bool _aiNoiseOn = true;
   bool _joining = false;
+  bool _previewLoading = false;
+  LocalVideoTrack? _previewTrack;
+  CameraPosition _cameraPosition = CameraPosition.front;
 
   @override
   void initState() {
     super.initState();
     _roomService = RoomService();
-    _requestMediaPermissions();
+    unawaited(_initPreview());
   }
 
-  Future<void> _requestMediaPermissions() async {
-    final status = await MediaPermissionService.ensureCameraAndMicrophone();
-    if (!mounted || status.allGranted) return;
+  @override
+  void dispose() {
+    unawaited(_stopPreview());
+    super.dispose();
+  }
 
-    showAppToast(
-      '${status.warnings.join('. ')}. Vào Cài đặt > Ofocus để cấp quyền.',
-      status: AppToastStatus.error,
-    );
+  Future<void> _initPreview() async {
+    final status = await MediaPermissionService.ensureCameraAndMicrophone();
+    if (!mounted) return;
+
+    if (!status.allGranted) {
+      showAppToast(
+        '${status.warnings.join('. ')}. Vào Cài đặt > Ofocus để cấp quyền.',
+        status: AppToastStatus.error,
+      );
+    }
+
+    if (_cameraOn && status.cameraGranted) {
+      await _startPreview();
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _startPreview() async {
+    if (!_cameraOn || _previewLoading) return;
+
+    setState(() => _previewLoading = true);
+    try {
+      final granted = await MediaPermissionService.ensureCamera();
+      if (!granted || !mounted) return;
+
+      await _stopPreview();
+      final track = await LocalVideoTrack.createCameraTrack(
+        CameraCaptureOptions(
+          cameraPosition: _cameraPosition,
+          params: VideoParametersPresets.h720_169,
+        ),
+      );
+      await track.start();
+      if (!mounted) {
+        await track.stop();
+        return;
+      }
+      _previewTrack = track;
+    } catch (error) {
+      debugPrint('[WaitingRoom] Failed to start camera preview: $error');
+      if (mounted) {
+        showAppToast(
+          'Không thể mở camera xem trước',
+          status: AppToastStatus.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _previewLoading = false);
+    }
+  }
+
+  Future<void> _stopPreview() async {
+    final track = _previewTrack;
+    _previewTrack = null;
+    if (track != null) {
+      await track.stop();
+    }
+  }
+
+  Future<void> _toggleCamera() async {
+    final nextValue = !_cameraOn;
+    setState(() => _cameraOn = nextValue);
+
+    if (nextValue) {
+      await _startPreview();
+    } else {
+      await _stopPreview();
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _flipCamera() async {
+    _cameraPosition = _cameraPosition.switched();
+    if (_cameraOn) {
+      await _startPreview();
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _joinClass() async {
@@ -130,7 +212,14 @@ class _ClassroomWaitingScreenState extends State<ClassroomWaitingScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: _VideoPreview(studentName: session.studentName),
+                  child: _VideoPreview(
+                    studentName: session.studentName,
+                    cameraOn: _cameraOn,
+                    previewTrack: _previewTrack,
+                    previewLoading: _previewLoading,
+                    cameraPosition: _cameraPosition,
+                    onFlipCamera: _flipCamera,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -150,11 +239,13 @@ class _ClassroomWaitingScreenState extends State<ClassroomWaitingScreen> {
                       Expanded(
                         child: _DeviceToggleCard(
                           title: 'Camera',
-                          device: 'FaceTime HD (Camera trước)',
+                          device: _cameraPosition == CameraPosition.front
+                              ? 'Camera trước'
+                              : 'Camera sau',
                           active: _cameraOn,
                           activeColor: AppColors.primaryIndigo,
                           asset: ClassroomIcons.cameraToggle,
-                          onToggle: () => setState(() => _cameraOn = !_cameraOn),
+                          onToggle: _toggleCamera,
                         ),
                       ),
                     ],
@@ -387,12 +478,31 @@ class _ClassInfoCard extends StatelessWidget {
 }
 
 class _VideoPreview extends StatelessWidget {
-  const _VideoPreview({required this.studentName});
+  const _VideoPreview({
+    required this.studentName,
+    required this.cameraOn,
+    required this.previewTrack,
+    required this.previewLoading,
+    required this.cameraPosition,
+    required this.onFlipCamera,
+  });
 
   final String studentName;
+  final bool cameraOn;
+  final LocalVideoTrack? previewTrack;
+  final bool previewLoading;
+  final CameraPosition cameraPosition;
+  final VoidCallback onFlipCamera;
+
+  String get _cameraLabel => switch (cameraPosition) {
+        CameraPosition.front => 'Camera trước',
+        CameraPosition.back => 'Camera sau',
+      };
 
   @override
   Widget build(BuildContext context) {
+    final hasPreview = cameraOn && previewTrack != null;
+
     return Container(
       height: 268,
       decoration: BoxDecoration(
@@ -410,15 +520,52 @@ class _VideoPreview extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.classroomBg, AppColors.primary],
+          if (hasPreview)
+            VideoTrackRenderer(previewTrack!)
+          else
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.classroomBg, AppColors.primary],
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      cameraOn ? Icons.videocam_off_outlined : Icons.videocam_off,
+                      size: 48,
+                      color: AppColors.onDarkSurface.withValues(alpha: 0.45),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      cameraOn
+                          ? (previewLoading
+                              ? 'Đang mở camera...'
+                              : 'Không thể hiển thị camera')
+                          : 'Camera đang tắt',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.onDarkSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          if (previewLoading)
+            Container(
+              color: Colors.black.withValues(alpha: 0.25),
+              alignment: Alignment.center,
+              child: const CircularProgressIndicator(
+                color: AppColors.onDarkSurface,
+                strokeWidth: 2.5,
+              ),
+            ),
           Positioned(
             top: 12,
             left: 12,
@@ -434,14 +581,14 @@ class _VideoPreview extends StatelessWidget {
                       Container(
                         width: 8,
                         height: 8,
-                        decoration: const BoxDecoration(
-                          color: AppColors.success,
+                        decoration: BoxDecoration(
+                          color: hasPreview ? AppColors.success : AppColors.error,
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'HD 1080p • 60fps',
+                        hasPreview ? 'Xem trước • $_cameraLabel' : 'Camera tắt',
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
@@ -459,8 +606,12 @@ class _VideoPreview extends StatelessWidget {
             right: 12,
             child: Row(
               children: [
-                const _PreviewCircleIcon(asset: ClassroomIcons.cameraFlip),
-                const SizedBox(width: 8),
+                if (cameraOn)
+                  GestureDetector(
+                    onTap: onFlipCamera,
+                    child: const _PreviewCircleIcon(asset: ClassroomIcons.cameraFlip),
+                  ),
+                if (cameraOn) const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
