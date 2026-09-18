@@ -10,12 +10,9 @@ workflows:
       - name: Prepare Android SDK platform 37
         script: |
           bash scripts/setup_android_sdk.sh
-      - name: Get packages
+      - name: Prepare iOS build
         script: |
-          flutter pub get
-      - name: Install CocoaPods
-        script: |
-          cd ios && pod install
+          bash scripts/ios_build_prepare.sh
       - name: Build Android App Bundle
         script: |
           flutter build appbundle --release
