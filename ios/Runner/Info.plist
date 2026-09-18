@@ -53,6 +53,14 @@
 	<string>oFocus cần camera để tham gia lớp học trực tuyến.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>oFocus cần microphone để tham gia lớp học trực tuyến.</string>
+	<key>RTCAppGroupIdentifier</key>
+	<string>group.com.example.ofocus</string>
+	<key>RTCScreenSharingExtension</key>
+	<string>com.example.ofocus.LiveKit-Broadcast-Extension</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

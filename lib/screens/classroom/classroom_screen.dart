@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:ofocus/config/livekit_config.dart';
 import 'package:ofocus/models/classroom_session.dart';
@@ -162,8 +163,16 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
 
   Future<void> _toggleScreenShare() async {
     try {
+      final wasEnabled = _liveKit.isScreenShareEnabled;
       await _liveKit.toggleScreenShare();
       if (!mounted) return;
+      if (!wasEnabled &&
+          lkPlatformIs(PlatformType.iOS) &&
+          !_liveKit.isScreenShareEnabled) {
+        showAppToast(
+          'Chọn Ofocus trong hộp thoại chia sẻ màn hình để bắt đầu',
+        );
+      }
       if (_liveKit.isScreenShareEnabled) {
         _closeOverlay();
       }

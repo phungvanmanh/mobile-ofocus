@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background/flutter_background.dart';
 import 'package:livekit_client/livekit_client.dart';
+// ignore: implementation_imports
+import 'package:livekit_client/src/managers/broadcast_manager.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
@@ -57,6 +59,9 @@ class LiveKitRoomService {
     if (participant == null) return;
 
     if (participant.isScreenShareEnabled()) {
+      if (lkPlatformIs(PlatformType.iOS)) {
+        await BroadcastManager().requestStop();
+      }
       await participant.setScreenShareEnabled(false);
       await _stopAndroidScreenShareBackground();
       onRoomChanged?.call();
