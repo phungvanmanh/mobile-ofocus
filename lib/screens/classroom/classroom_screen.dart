@@ -181,7 +181,9 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
 
       if (!wasEnabled && lkPlatformIs(PlatformType.iOS)) {
         showAppToast(
-          '1) Chọn Ofocus  2) Bấm "Bắt đầu phát sóng"  3) Quay lại app',
+          'iOS không cho share full màn hình trực tiếp như Android. '
+          'Chọn Ofocus (không phải chọn từng app) → bấm "Bắt đầu phát sóng" '
+          '→ toàn bộ màn hình sẽ được ghi.',
         );
       }
 
@@ -190,11 +192,17 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
 
       if (_liveKit.isScreenShareEnabled) {
         _closeOverlay();
+        if (lkPlatformIs(PlatformType.iOS)) {
+          showAppToast('Đã bắt đầu chia sẻ màn hình');
+        }
       }
     } catch (error) {
       if (!mounted) return;
+      final message = error is StateError
+          ? error.message
+          : 'Không thể chia sẻ màn hình';
       showAppToast(
-        'Không thể chia sẻ màn hình',
+        message,
         status: AppToastStatus.error,
       );
     }
@@ -981,7 +989,9 @@ class _MorePanel extends StatelessWidget {
                       : 'Chia sẻ màn hình',
                   subtitle: screenShareEnabled
                       ? 'Đang trình chiếu màn hình của bạn'
-                      : 'Trình chiếu slide hoặc demo code',
+                      : lkPlatformIs(PlatformType.iOS)
+                          ? 'iOS: chọn Ofocus → Bắt đầu phát sóng (full màn hình)'
+                          : 'Trình chiếu slide hoặc demo code',
                   onTap: onToggleScreenShare,
                 ),
                 const _MoreMenuItem(
