@@ -1,0 +1,27 @@
+workflows:
+  ofocus-android-ios:
+    name: oFocus Android & iOS
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Prepare Android SDK platform 37
+        script: |
+          bash scripts/setup_android_sdk.sh
+      - name: Get packages
+        script: |
+          flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install
+      - name: Build Android App Bundle
+        script: |
+          flutter build appbundle --release
+      - name: Build iOS (no codesign)
+        script: |
+          flutter build ios --release --no-codesign
+    artifacts:
+      - build/app/outputs/**/*.aab
+      - build/ios/iphoneos/*.app
