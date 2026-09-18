@@ -5,6 +5,7 @@ import 'package:livekit_client/livekit_client.dart';
 import 'package:livekit_client/src/managers/broadcast_manager.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:ofocus/services/media_permission_service.dart';
 
 class LiveKitRoomService {
   LiveKitRoomService({this.onRoomChanged});
@@ -43,18 +44,40 @@ class LiveKitRoomService {
   Future<void> toggleMicrophone() async {
     final participant = localParticipant;
     if (participant == null) return;
-    await participant.setMicrophoneEnabled(!participant.isMicrophoneEnabled());
+
+    final enabling = !participant.isMicrophoneEnabled();
+    if (enabling) {
+      final granted = await MediaPermissionService.ensureMicrophone();
+      if (!granted) {
+        throw StateError('Quyền microphone bị từ chối');
+      }
+    }
+
+    await participant.setMicrophoneEnabled(enabling);
     onRoomChanged?.call();
   }
 
   Future<void> toggleCamera() async {
     final participant = localParticipant;
     if (participant == null) return;
-    await participant.setCameraEnabled(!participant.isCameraEnabled());
+
+    final enabling = !participant.isCameraEnabled();
+    if (enabling) {
+      final granted = await MediaPermissionService.ensureCamera();
+      if (!granted) {
+        throw StateError('Quyền camera bị từ chối');
+      }
+    }
+
+    await participant.setCameraEnabled(enabling);
     onRoomChanged?.call();
   }
 
   Future<void> toggleScreenShare() async {
+    if (!isConnected) {
+      throw StateError('Chưa kết nối phòng học');
+    }
+
     final participant = localParticipant;
     if (participant == null) return;
 
@@ -120,7 +143,7 @@ class LiveKitRoomService {
     }
   }
 
-  Future<void> connect({
+  Future<List<String>> connect({
     required String url,
     required String token,
     bool cameraEnabled = true,
@@ -132,6 +155,9 @@ class LiveKitRoomService {
       roomOptions: const RoomOptions(
         adaptiveStream: true,
         dynacast: true,
+        defaultScreenShareCaptureOptions: ScreenShareCaptureOptions(
+          useiOSBroadcastExtension: true,
+        ),
       ),
     );
 
@@ -155,12 +181,35 @@ class LiveKitRoomService {
       });
 
     await room.connect(url, token);
-
-    await room.localParticipant?.setCameraEnabled(cameraEnabled);
-    await room.localParticipant?.setMicrophoneEnabled(microphoneEnabled);
-
     _room = room;
+
+    final warnings = <String>[];
+    final permissions = await MediaPermissionService.ensureCameraAndMicrophone(
+      requestCamera: cameraEnabled,
+      requestMicrophone: microphoneEnabled,
+    );
+    warnings.addAll(permissions.warnings);
+
+    if (cameraEnabled && permissions.cameraGranted) {
+      try {
+        await room.localParticipant?.setCameraEnabled(true);
+      } catch (error) {
+        debugPrint('[LiveKit] Failed to enable camera: $error');
+        warnings.add('Không thể bật camera');
+      }
+    }
+
+    if (microphoneEnabled && permissions.microphoneGranted) {
+      try {
+        await room.localParticipant?.setMicrophoneEnabled(true);
+      } catch (error) {
+        debugPrint('[LiveKit] Failed to enable microphone: $error');
+        warnings.add('Không thể bật microphone');
+      }
+    }
+
     onRoomChanged?.call();
+    return warnings;
   }
 
   Future<void> disconnect() async {

@@ -66,12 +66,18 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
     }
 
     try {
-      await _liveKit.connect(
+      final warnings = await _liveKit.connect(
         url: LiveKitConfig.url,
         token: token,
         cameraEnabled: session.cameraEnabled,
         microphoneEnabled: session.microphoneEnabled,
       );
+      if (warnings.isNotEmpty && mounted) {
+        showAppToast(
+          '${warnings.join('. ')}. Vào Cài đặt > Ofocus để cấp quyền.',
+          status: AppToastStatus.error,
+        );
+      }
     } catch (error) {
       final message = error.toString();
       _connectError = message.contains('MissingPluginException')
@@ -162,17 +168,26 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
   }
 
   Future<void> _toggleScreenShare() async {
+    if (!_liveKit.isConnected) {
+      showAppToast(
+        'Chưa kết nối phòng học',
+        status: AppToastStatus.error,
+      );
+      return;
+    }
+
     try {
       final wasEnabled = _liveKit.isScreenShareEnabled;
-      await _liveKit.toggleScreenShare();
-      if (!mounted) return;
-      if (!wasEnabled &&
-          lkPlatformIs(PlatformType.iOS) &&
-          !_liveKit.isScreenShareEnabled) {
+
+      if (!wasEnabled && lkPlatformIs(PlatformType.iOS)) {
         showAppToast(
-          'Chọn Ofocus trong hộp thoại chia sẻ màn hình để bắt đầu',
+          'Chọn Ofocus trong hộp thoại hệ thống, rồi bấm Bắt đầu phát sóng',
         );
       }
+
+      await _liveKit.toggleScreenShare();
+      if (!mounted) return;
+
       if (_liveKit.isScreenShareEnabled) {
         _closeOverlay();
       }

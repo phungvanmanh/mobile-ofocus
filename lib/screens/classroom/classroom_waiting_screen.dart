@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:ofocus/models/classroom_session.dart';
 import 'package:ofocus/router/app_router.dart';
+import 'package:ofocus/services/media_permission_service.dart';
 import 'package:ofocus/services/room_service.dart';
 import 'package:ofocus/utils/app_toast.dart';
 import 'package:ofocus/widgets/classroom/classroom_icons.dart';
@@ -33,6 +34,17 @@ class _ClassroomWaitingScreenState extends State<ClassroomWaitingScreen> {
   void initState() {
     super.initState();
     _roomService = RoomService();
+    _requestMediaPermissions();
+  }
+
+  Future<void> _requestMediaPermissions() async {
+    final status = await MediaPermissionService.ensureCameraAndMicrophone();
+    if (!mounted || status.allGranted) return;
+
+    showAppToast(
+      '${status.warnings.join('. ')}. Vào Cài đặt > Ofocus để cấp quyền.',
+      status: AppToastStatus.error,
+    );
   }
 
   Future<void> _joinClass() async {
@@ -51,6 +63,17 @@ class _ClassroomWaitingScreenState extends State<ClassroomWaitingScreen> {
     }
 
     setState(() => _joining = true);
+
+    final permissions = await MediaPermissionService.ensureCameraAndMicrophone(
+      requestCamera: _cameraOn,
+      requestMicrophone: _micOn,
+    );
+    if (!permissions.allGranted && mounted) {
+      showAppToast(
+        '${permissions.warnings.join('. ')}. Bạn vẫn có thể vào phòng nhưng camera/mic sẽ tắt.',
+        status: AppToastStatus.error,
+      );
+    }
 
     final result = await _roomService.fetchRoomToken(
       roomName: roomName,
@@ -74,8 +97,8 @@ class _ClassroomWaitingScreenState extends State<ClassroomWaitingScreen> {
       AppRoutes.toClassroom(
         session: session.copyWith(
           liveKitToken: result.token,
-          cameraEnabled: _cameraOn,
-          microphoneEnabled: _micOn,
+          cameraEnabled: _cameraOn && permissions.cameraGranted,
+          microphoneEnabled: _micOn && permissions.microphoneGranted,
         ),
       ),
     );
