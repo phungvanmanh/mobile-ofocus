@@ -204,10 +204,7 @@ class _ParticipantTile extends StatelessWidget {
             Positioned(
               top: 8,
               left: 8,
-              child: _Badge(
-                label: 'BẠN',
-                color: AppColors.primary,
-              ),
+              child: _Badge(label: 'BẠN', color: AppColors.primary),
             ),
           if (participant.handRaised)
             Positioned(
@@ -219,10 +216,7 @@ class _ParticipantTile extends StatelessWidget {
                   color: AppColors.warning,
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: const ClassroomIcon(
-                  ClassroomIcons.handRaised,
-                  size: 12,
-                ),
+                child: const ClassroomIcon(ClassroomIcons.handRaised, size: 12),
               ),
             ),
           Positioned(
@@ -320,11 +314,7 @@ class _MoreParticipantsTile extends StatelessWidget {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({
-    required this.label,
-    required this.color,
-    this.dotColor,
-  });
+  const _Badge({required this.label, required this.color, this.dotColor});
 
   final String label;
   final Color color;
@@ -400,7 +390,7 @@ class ClassroomControlBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 13, 16, 12),
       decoration: BoxDecoration(
-        color: AppColors.classroomBgDark,
+        color: const Color(0x1AEAEDFF),
         border: Border(
           top: BorderSide(color: AppColors.textMuted.withValues(alpha: 0.2)),
         ),
@@ -473,12 +463,18 @@ class _ControlItem extends StatelessWidget {
     this.onTap,
   });
 
+  static const _iconSize = 16.0;
+  static const _lightButtonBg = Color(0x33E2E7FF);
+
   final String label;
   final String asset;
   final Color background;
   final Color? labelColor;
   final String? badge;
   final VoidCallback? onTap;
+
+  Color get _iconColor =>
+      background == _lightButtonBg ? AppColors.primary : Colors.white;
 
   @override
   Widget build(BuildContext context) {
@@ -494,12 +490,12 @@ class _ControlItem extends StatelessWidget {
               Container(
                 width: 44,
                 height: 44,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: background,
                   shape: BoxShape.circle,
                 ),
-                alignment: Alignment.center,
-                child: ClassroomIcon(asset, size: 18),
+                child: ClassroomIcon(asset, size: _iconSize, color: _iconColor),
               ),
               if (badge != null)
                 Positioned(
@@ -512,7 +508,10 @@ class _ControlItem extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppColors.error,
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.classroomBg, width: 2),
+                      border: Border.all(
+                        color: AppColors.classroomBg,
+                        width: 2,
+                      ),
                     ),
                     child: Text(
                       badge!,

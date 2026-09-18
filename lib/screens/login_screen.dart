@@ -127,10 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (session == null) {
-      _showMessage(
-        'Đăng nhập thành công nhưng không lấy được token',
-        status: AppToastStatus.warning,
-      );
+      _showMessage('Đăng không thành công', status: AppToastStatus.warning);
       return;
     }
 

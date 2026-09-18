@@ -15,11 +15,64 @@ class ScheduleScreen extends StatefulWidget {
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
   int _modeIndex = 0;
-  int _selectedDayIndex = 1;
+  DateTime _weekStart = _mondayOfWeek(DateTime.now());
+  int? _manualDayIndex;
 
-  static const _weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-  static const _dates = ['12', '13', '14', '15', '16', '17', '18'];
+  static const _weekDayLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
   static const _weekendIndices = {5, 6};
+
+  static DateTime _mondayOfWeek(DateTime date) {
+    final day = DateTime(date.year, date.month, date.day);
+    return day.subtract(Duration(days: day.weekday - 1));
+  }
+
+  static int? _todayIndexInWeek(DateTime weekStart) {
+    final now = DateTime.now();
+    for (var i = 0; i < 7; i++) {
+      final day = weekStart.add(Duration(days: i));
+      if (day.year == now.year &&
+          day.month == now.month &&
+          day.day == now.day) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  int get _activeDayIndex =>
+      _manualDayIndex ?? _todayIndexInWeek(_weekStart) ?? 0;
+
+  static int _isoWeekNumber(DateTime date) {
+    final thursday = date.add(Duration(days: 4 - date.weekday));
+    final jan4 = DateTime(thursday.year, 1, 4);
+    final week1Monday = jan4.subtract(Duration(days: jan4.weekday - 1));
+    return ((thursday.difference(week1Monday).inDays) / 7).floor() + 1;
+  }
+
+  static String _formatDayMonth(DateTime date) => '${date.day}/${date.month}';
+
+  DateTime get _weekEnd => _weekStart.add(const Duration(days: 6));
+
+  List<String> get _weekDates => List.generate(
+    7,
+    (index) => '${_weekStart.add(Duration(days: index)).day}',
+  );
+
+  String get _currentMonthYear =>
+      'Tháng ${_weekStart.month}, ${_weekStart.year}';
+
+  String get _weekRangeLabel {
+    final weekNumber = _isoWeekNumber(_weekStart);
+    return 'Tuần $weekNumber: ${_formatDayMonth(_weekStart)} - '
+        '${_formatDayMonth(_weekEnd)}';
+  }
+
+  void _shiftWeek(int deltaWeeks) {
+    setState(() {
+      _weekStart = _weekStart.add(Duration(days: 7 * deltaWeeks));
+      _manualDayIndex = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +103,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                             ),
                           ),
                           Text(
-                            'Tháng 10, 2026',
+                            _currentMonthYear,
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               color: AppColors.textSecondary,
@@ -74,10 +127,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                _ModeSwitcher(
-                  selectedIndex: _modeIndex,
-                  onChanged: (index) => setState(() => _modeIndex = index),
-                ),
+                // _ModeSwitcher(
+                //   selectedIndex: _modeIndex,
+                //   onChanged: (index) => setState(() => _modeIndex = index),
+                // ),
               ],
             ),
           ),
@@ -98,7 +151,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Tuần 42: 12/10 - 18/10',
+                      _weekRangeLabel,
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -107,35 +160,41 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       ),
                     ),
                     const Spacer(),
-                    _IconCircleButton(
-                      size: 32,
-                      backgroundColor: AppColors.surface,
-                      child: Icon(
-                        Icons.chevron_left,
-                        size: 18,
-                        color: AppColors.primary,
+                    GestureDetector(
+                      onTap: () => _shiftWeek(-1),
+                      child: _IconCircleButton(
+                        size: 32,
+                        backgroundColor: AppColors.surface,
+                        child: Icon(
+                          Icons.chevron_left,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 4),
-                    _IconCircleButton(
-                      size: 32,
-                      backgroundColor: AppColors.surface,
-                      child: Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: AppColors.primary,
+                    GestureDetector(
+                      onTap: () => _shiftWeek(1),
+                      child: _IconCircleButton(
+                        size: 32,
+                        backgroundColor: AppColors.surface,
+                        child: Icon(
+                          Icons.chevron_right,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 _WeekStrip(
-                  weekDays: _weekDays,
-                  dates: _dates,
+                  weekDays: _weekDayLabels,
+                  dates: _weekDates,
                   weekendIndices: _weekendIndices,
-                  selectedIndex: _selectedDayIndex,
+                  selectedIndex: _activeDayIndex,
                   onSelected: (index) =>
-                      setState(() => _selectedDayIndex = index),
+                      setState(() => _manualDayIndex = index),
                 ),
               ],
             ),
@@ -175,15 +234,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         color: AppColors.successLight.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: Text(
-                        '2 buổi hôm nay',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.24,
-                          color: AppColors.success,
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -198,42 +248,39 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 }
 
-class _ModeSwitcher extends StatelessWidget {
-  const _ModeSwitcher({
-    required this.selectedIndex,
-    required this.onChanged,
-  });
+// class _ModeSwitcher extends StatelessWidget {
+//   const _ModeSwitcher({required this.selectedIndex, required this.onChanged});
 
-  final int selectedIndex;
-  final ValueChanged<int> onChanged;
+//   final int selectedIndex;
+//   final ValueChanged<int> onChanged;
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          _ModeTab(
-            label: 'Theo tuần',
-            iconAsset: 'assets/home/icons/7d99d.svg',
-            active: selectedIndex == 0,
-            onTap: () => onChanged(0),
-          ),
-          _ModeTab(
-            label: 'Theo ngày',
-            iconAsset: 'assets/home/icons/e327b.svg',
-            active: selectedIndex == 1,
-            onTap: () => onChanged(1),
-          ),
-        ],
-      ),
-    );
-  }
-}
+//   @override
+//   Widget build(BuildContext context) {
+//     return Container(
+//       padding: const EdgeInsets.all(4),
+//       decoration: BoxDecoration(
+//         color: AppColors.surface,
+//         borderRadius: BorderRadius.circular(12),
+//       ),
+//       child: Row(
+//         children: [
+//           _ModeTab(
+//             label: 'Theo tuần',
+//             iconAsset: 'assets/home/icons/7d99d.svg',
+//             active: selectedIndex == 0,
+//             onTap: () => onChanged(0),
+//           ),
+//           _ModeTab(
+//             label: 'Theo ngày',
+//             iconAsset: 'assets/home/icons/e327b.svg',
+//             active: selectedIndex == 1,
+//             onTap: () => onChanged(1),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
 
 class _ModeTab extends StatelessWidget {
   const _ModeTab({
@@ -287,9 +334,7 @@ class _ModeTab extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.24,
-                  color: active
-                      ? AppColors.primary
-                      : AppColors.textSecondary,
+                  color: active ? AppColors.primary : AppColors.textSecondary,
                 ),
               ),
             ],
@@ -409,10 +454,7 @@ class _ScheduleTimeline extends StatelessWidget {
           left: 11,
           top: 16,
           bottom: 16,
-          child: Container(
-            width: 2,
-            color: AppColors.surfaceBorder,
-          ),
+          child: Container(width: 2, color: AppColors.surfaceBorder),
         ),
         Column(
           children: const [
@@ -594,7 +636,8 @@ class _LiveTimelineCard extends StatelessWidget {
                       height: 48,
                       child: ElevatedButton.icon(
                         onPressed: () {
-                          Navigator.of(context).push(AppRoutes.toClassroomWaiting());
+                          Navigator.of(context)
+                              .push(AppRoutes.toClassroomWaiting());
                         },
                         icon: SvgPicture.asset(
                           'assets/home/icons/92226.svg',
@@ -680,11 +723,7 @@ class _UpcomingTodayCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Icon(
-                Icons.schedule,
-                size: 12,
-                color: Colors.white,
-              ),
+              child: const Icon(Icons.schedule, size: 12, color: Colors.white),
             ),
             const SizedBox(width: 8),
             Text(
@@ -998,9 +1037,7 @@ class _SecondaryButton extends StatelessWidget {
         style: TextButton.styleFrom(
           backgroundColor: backgroundColor,
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
     );

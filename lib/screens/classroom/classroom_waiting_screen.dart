@@ -137,10 +137,7 @@ class _ClassroomWaitingScreenState extends State<ClassroomWaitingScreen> {
     final classId = session.classId;
 
     if (roomName == null || roomName.isEmpty || classId == null) {
-      showAppToast(
-        'Thiếu thông tin phòng học',
-        status: AppToastStatus.error,
-      );
+      showAppToast('Thiếu thông tin phòng học', status: AppToastStatus.error);
       return;
     }
 
@@ -339,7 +336,10 @@ class _ClassInfoCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.successLight.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(999),
@@ -495,9 +495,9 @@ class _VideoPreview extends StatelessWidget {
   final VoidCallback onFlipCamera;
 
   String get _cameraLabel => switch (cameraPosition) {
-        CameraPosition.front => 'Camera trước',
-        CameraPosition.back => 'Camera sau',
-      };
+    CameraPosition.front => 'Camera trước',
+    CameraPosition.back => 'Camera sau',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -536,7 +536,9 @@ class _VideoPreview extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      cameraOn ? Icons.videocam_off_outlined : Icons.videocam_off,
+                      cameraOn
+                          ? Icons.videocam_off_outlined
+                          : Icons.videocam_off,
                       size: 48,
                       color: AppColors.onDarkSurface.withValues(alpha: 0.45),
                     ),
@@ -544,8 +546,8 @@ class _VideoPreview extends StatelessWidget {
                     Text(
                       cameraOn
                           ? (previewLoading
-                              ? 'Đang mở camera...'
-                              : 'Không thể hiển thị camera')
+                                ? 'Đang mở camera...'
+                                : 'Không thể hiển thị camera')
                           : 'Camera đang tắt',
                       style: GoogleFonts.inter(
                         fontSize: 13,
@@ -574,7 +576,10 @@ class _VideoPreview extends StatelessWidget {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   color: const Color(0xBF283044),
                   child: Row(
                     children: [
@@ -582,7 +587,9 @@ class _VideoPreview extends StatelessWidget {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: hasPreview ? AppColors.success : AppColors.error,
+                          color: hasPreview
+                              ? AppColors.success
+                              : AppColors.error,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -609,11 +616,16 @@ class _VideoPreview extends StatelessWidget {
                 if (cameraOn)
                   GestureDetector(
                     onTap: onFlipCamera,
-                    child: const _PreviewCircleIcon(asset: ClassroomIcons.cameraFlip),
+                    child: const _PreviewCircleIcon(
+                      asset: ClassroomIcons.cameraFlip,
+                    ),
                   ),
                 if (cameraOn) const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primaryIndigo,
                     borderRadius: BorderRadius.circular(999),
@@ -652,7 +664,10 @@ class _VideoPreview extends StatelessWidget {
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       color: const Color(0xCC283044),
                       child: Row(
                         children: [
@@ -833,10 +848,7 @@ class _DeviceToggleCard extends StatelessWidget {
 }
 
 class _AudioSettingsCard extends StatelessWidget {
-  const _AudioSettingsCard({
-    required this.aiNoiseOn,
-    required this.onAiToggle,
-  });
+  const _AudioSettingsCard({required this.aiNoiseOn, required this.onAiToggle});
 
   final bool aiNoiseOn;
   final VoidCallback onAiToggle;
@@ -863,11 +875,12 @@ class _AudioSettingsCard extends StatelessWidget {
               Container(
                 width: 40,
                 height: 40,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppColors.surfaceMuted,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const ClassroomIcon(ClassroomIcons.speaker, size: 18),
+                child: const ClassroomIcon(ClassroomIcons.speaker, size: 16),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -905,7 +918,10 @@ class _AudioSettingsCard extends StatelessWidget {
                 ),
                 style: TextButton.styleFrom(
                   backgroundColor: AppColors.surfaceBorder,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                 ),
               ),
             ],
@@ -916,6 +932,7 @@ class _AudioSettingsCard extends StatelessWidget {
               Container(
                 width: 40,
                 height: 40,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppColors.successLight.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(8),

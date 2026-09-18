@@ -89,6 +89,12 @@ class _MyClassesScreenState extends State<MyClassesScreen> {
     return role?.toString().toUpperCase() == 'STUDENT';
   }
 
+  bool get _isTeacher {
+    if (widget.userData is! Map) return false;
+    final role = (widget.userData as Map)['role'];
+    return role?.toString().toUpperCase() == 'TEACHER';
+  }
+
   String _studentName() {
     if (widget.userData is Map) {
       final map = widget.userData as Map;
@@ -223,10 +229,7 @@ class _MyClassesScreenState extends State<MyClassesScreen> {
 
   Future<void> _joinLiveClass(ActiveClassSchedule item) async {
     if (item.roomCode.isEmpty || item.classId <= 0) {
-      showAppToast(
-        'Thiếu thông tin phòng học',
-        status: AppToastStatus.error,
-      );
+      showAppToast('Thiếu thông tin phòng học', status: AppToastStatus.error);
       return;
     }
 
@@ -322,23 +325,25 @@ class _MyClassesScreenState extends State<MyClassesScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: _showAddClassDialog,
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.add,
-                          size: 24,
-                          color: AppColors.primary,
+                    if (_isTeacher) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: _showAddClassDialog,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.add,
+                            size: 24,
+                            color: AppColors.primary,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ],
@@ -456,6 +461,8 @@ class _MyClassesScreenState extends State<MyClassesScreen> {
                         progressValue: item.progressValue,
                         progressColor: item.progressColor,
                         footerNote: item.footerNote,
+                        showDeleteButton: _isTeacher,
+                        showQuickCreateRoomButton: _isTeacher,
                         onDelete: () => _confirmDeleteClass(item),
                         onQuickCreateRoom: () => _createQuickRoom(item),
                         isCreatingRoom: _creatingRoomClassId == item.classId,
@@ -569,10 +576,7 @@ class _LiveClassSection extends StatelessWidget {
         ...schedules.map(
           (item) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: _LiveClassCard(
-              schedule: item,
-              onJoin: () => onJoin(item),
-            ),
+            child: _LiveClassCard(schedule: item, onJoin: () => onJoin(item)),
           ),
         ),
       ],
@@ -581,10 +585,7 @@ class _LiveClassSection extends StatelessWidget {
 }
 
 class _LiveClassCard extends StatelessWidget {
-  const _LiveClassCard({
-    required this.schedule,
-    required this.onJoin,
-  });
+  const _LiveClassCard({required this.schedule, required this.onJoin});
 
   final ActiveClassSchedule schedule;
   final VoidCallback onJoin;
@@ -681,9 +682,7 @@ class _LiveClassCard extends StatelessWidget {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.classroomBg.withValues(
-                              alpha: 0.8,
-                            ),
+                            color: AppColors.classroomBg.withValues(alpha: 0.8),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -815,10 +814,7 @@ class _LiveClassCard extends StatelessWidget {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [
-                          AppColors.primary,
-                          AppColors.primaryIndigo,
-                        ],
+                        colors: [AppColors.primary, AppColors.primaryIndigo],
                       ),
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: const [
@@ -882,6 +878,8 @@ class _EnrolledClassCard extends StatelessWidget {
     required this.progressValue,
     required this.progressColor,
     required this.footerNote,
+    this.showDeleteButton = false,
+    this.showQuickCreateRoomButton = false,
     this.onDelete,
     this.onQuickCreateRoom,
     this.isCreatingRoom = false,
@@ -893,6 +891,8 @@ class _EnrolledClassCard extends StatelessWidget {
   final double progressValue;
   final Color progressColor;
   final String footerNote;
+  final bool showDeleteButton;
+  final bool showQuickCreateRoomButton;
   final VoidCallback? onDelete;
   final VoidCallback? onQuickCreateRoom;
   final bool isCreatingRoom;
@@ -928,10 +928,11 @@ class _EnrolledClassCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete, color: AppColors.error),
-              ),
+              if (showDeleteButton && onDelete != null)
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete, color: AppColors.error),
+                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1002,35 +1003,37 @@ class _EnrolledClassCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: isCreatingRoom ? null : onQuickCreateRoom,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+              if (showQuickCreateRoomButton && onQuickCreateRoom != null) ...[
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: isCreatingRoom ? null : onQuickCreateRoom,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
+                  child: isCreatingRoom
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          'Tạo phòng nhanh',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
-                child: isCreatingRoom
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        'Tạo phòng nhanh',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-              ),
+              ],
             ],
           ),
         ],
