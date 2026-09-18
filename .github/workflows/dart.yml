@@ -62,6 +62,33 @@ jobs:
           fi
           bash scripts/register_apple_app_group.sh
 
+      - name: Check signing secrets
+        if: inputs.signed
+        env:
+          IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          IOS_PROVISION_PROFILE_MAIN_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_MAIN_BASE64 }}
+          IOS_PROVISION_PROFILE_EXTENSION_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_EXTENSION_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          missing=0
+          for key in IOS_P12_BASE64 IOS_P12_PASSWORD IOS_PROVISION_PROFILE_MAIN_BASE64 IOS_PROVISION_PROFILE_EXTENSION_BASE64 IOS_TEAM_ID; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "::error::Thieu GitHub Secret: ${key}"
+              missing=1
+            else
+              echo "OK: ${key} da co"
+            fi
+          done
+          if [[ "${missing}" -eq 1 ]]; then
+            echo ""
+            echo "Huong dan tao base64 tren Windows (PowerShell):"
+            echo '  [Convert]::ToBase64String([IO.File]::ReadAllBytes("duong\dan\file.p12"))'
+            echo '  [Convert]::ToBase64String([IO.File]::ReadAllBytes("duong\dan\profile.mobileprovision"))'
+            echo "Copy 1 dong lien tuc, KHONG xuong dong, roi paste vao GitHub Secret."
+            exit 1
+          fi
+
       - name: Install code signing (signed build)
         if: inputs.signed
         env:
