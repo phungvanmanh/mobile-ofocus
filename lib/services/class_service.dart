@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:ofocus/config/api_config.dart';
 import 'package:ofocus/models/active_class_schedule.dart';
+import 'package:ofocus/models/daily_class_schedule.dart';
 import 'package:ofocus/models/enrolled_class.dart';
 import 'package:ofocus/services/api_client.dart';
 import 'package:ofocus/services/session_manager.dart';
@@ -13,6 +14,27 @@ class ClassService {
     : _sessionManager = sessionManager ?? SessionManager();
 
   final SessionManager _sessionManager;
+
+  Future<String?> _resolveAuthToken() async {
+    await _sessionManager.loadSession();
+    final token = await _sessionManager.getAuthToken();
+    if (token == null || token.isEmpty) return null;
+    return token;
+  }
+
+  Future<http.Response> _authGet(String url) async {
+    final token = await _resolveAuthToken();
+    if (token == null) {
+      throw StateError('missing_auth_token');
+    }
+
+    debugPrint('[ClassService] GET $url (Authorization: Bearer ***)');
+
+    return http.get(
+      Uri.parse(url),
+      headers: ApiClient.authHeaders(token),
+    );
+  }
 
   Future<ActiveScheduleListResult> fetchActiveSchedules() async {
     final token = await _sessionManager.getAuthToken();
@@ -53,6 +75,58 @@ class ClassService {
         'Không thể tải lớp đang diễn ra',
       );
     }
+  }
+
+  Future<DailyScheduleListResult> fetchMySchedulesByDate(DateTime date) async {
+    final dateKey = formatApiDate(date);
+    final url = ApiConfig.classScheduleMine(dateKey);
+
+    try {
+      final response = await _authGet(url);
+
+      debugPrint('[ClassService] GET $url → ${response.statusCode}');
+
+      if (response.statusCode == 401) {
+        return DailyScheduleListResult.failure(
+          'Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.',
+        );
+      }
+
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        return DailyScheduleListResult.failure(
+          'Phản hồi không hợp lệ từ máy chủ',
+        );
+      }
+
+      if (!_isSuccess(body)) {
+        return DailyScheduleListResult.failure(
+          _extractErrorMessage(body, fallback: 'Không thể tải lịch học'),
+        );
+      }
+
+      final items = _extractList(body['data']);
+      final schedules = items
+          .map(DailyClassSchedule.fromJson)
+          .toList(growable: false)
+        ..sort((a, b) => a.startTime.compareTo(b.startTime));
+
+      return DailyScheduleListResult.success(schedules);
+    } on StateError catch (error) {
+      if ('$error'.contains('missing_auth_token')) {
+        return DailyScheduleListResult.failure('Phiên đăng nhập không hợp lệ');
+      }
+      rethrow;
+    } catch (error, stack) {
+      debugPrint('[ClassService] fetchMySchedulesByDate error: $error');
+      debugPrint('$stack');
+      return DailyScheduleListResult.failure('Không thể tải lịch học');
+    }
+  }
+
+  static String formatApiDate(DateTime date) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)}';
   }
 
   Future<ClassListResult> fetchMyClasses() async {
@@ -363,6 +437,32 @@ class ClassService {
     }
     return fallback;
   }
+}
+
+class DailyScheduleListResult {
+  const DailyScheduleListResult._({
+    required this.isSuccess,
+    this.schedules = const [],
+    this.errorMessage,
+  });
+
+  factory DailyScheduleListResult.success(List<DailyClassSchedule> schedules) {
+    return DailyScheduleListResult._(
+      isSuccess: true,
+      schedules: schedules,
+    );
+  }
+
+  factory DailyScheduleListResult.failure(String message) {
+    return DailyScheduleListResult._(
+      isSuccess: false,
+      errorMessage: message,
+    );
+  }
+
+  final bool isSuccess;
+  final List<DailyClassSchedule> schedules;
+  final String? errorMessage;
 }
 
 class ActiveScheduleListResult {

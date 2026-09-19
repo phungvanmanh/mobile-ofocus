@@ -186,7 +186,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             userData: _userData,
             refreshToken: _tabRefreshToken[1] ?? 0,
           ),
-          const ScheduleScreen(),
+          ScheduleScreen(
+            sessionManager: widget.sessionManager,
+            refreshToken: _tabRefreshToken[2] ?? 0,
+          ),
           ProfileScreen(
             userData: _userData,
             sessionManager: widget.sessionManager,

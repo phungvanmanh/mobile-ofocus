@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:ofocus/config/api_config.dart';
+import 'package:ofocus/services/api_client.dart';
 
 class AuthService {
   Future<LoginResult> login({
@@ -53,6 +54,24 @@ class AuthService {
     );
   }
 
+  Future<AuthActionResult<ChangePasswordData>> changePassword({
+    required String token,
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) {
+    return _postAuthAction(
+      ApiConfig.changePassword,
+      token,
+      {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+        'confirmPassword': confirmPassword,
+      },
+      ChangePasswordData.fromJson,
+    );
+  }
+
   Future<LoginResult> _postLogin(
     String url,
     Map<String, dynamic> payload,
@@ -79,6 +98,40 @@ class AuthService {
       return LoginResult.failure(_extractErrorMessage(body));
     } catch (_) {
       return LoginResult.failure('Không thể kết nối máy chủ. Vui lòng thử lại.');
+    }
+  }
+
+  Future<AuthActionResult<T>> _postAuthAction<T>(
+    String url,
+    String token,
+    Map<String, dynamic> payload,
+    T Function(Map<String, dynamic> json) parseData,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: ApiClient.authHeaders(token),
+        body: jsonEncode(payload),
+      );
+
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        return AuthActionResult.failure('Phản hồi không hợp lệ từ máy chủ');
+      }
+
+      final meta = body['meta'];
+      final success = meta is Map && meta['success'] == true;
+      final data = body['data'];
+
+      if (success && data is Map<String, dynamic>) {
+        return AuthActionResult.success(parseData(data));
+      }
+
+      return AuthActionResult.failure(_extractErrorMessage(body));
+    } catch (_) {
+      return AuthActionResult.failure(
+        'Không thể kết nối máy chủ. Vui lòng thử lại.',
+      );
     }
   }
 
@@ -239,6 +292,19 @@ class ResetPasswordData {
     return ResetPasswordData(
       message: json['message'] as String? ??
           'Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.',
+    );
+  }
+
+  final String message;
+}
+
+class ChangePasswordData {
+  const ChangePasswordData({required this.message});
+
+  factory ChangePasswordData.fromJson(Map<String, dynamic> json) {
+    return ChangePasswordData(
+      message: json['message'] as String? ??
+          'Đổi mật khẩu thành công.',
     );
   }
 

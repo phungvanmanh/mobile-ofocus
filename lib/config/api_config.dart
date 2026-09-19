@@ -40,7 +40,7 @@ abstract final class ApiConfig {
   //   ApiEnvironment.local  → BE localhost
   //   ApiEnvironment.server → BE production
   // ---------------------------------------------------------------------------
-  static const defaultEnvironment = ApiEnvironment.local;
+  static const defaultEnvironment = ApiEnvironment.server;
   static const _envName = String.fromEnvironment('API_ENV');
   static const _customBaseUrl = String.fromEnvironment('API_BASE_URL');
   static const _serverHost = 'https://api.ofocus.vn';
@@ -89,12 +89,15 @@ abstract final class ApiConfig {
   static String get verifyOtp => _endpoint('${_paths.authPrefix}/verify-otp');
   static String get resetPassword =>
       _endpoint('${_paths.authPrefix}/reset-password');
+  static String get changePassword => _endpoint('users/change-password');
   static String get updateAvatar => _endpoint('users/update-avatar');
   static String get classMine => _endpoint('class/mine');
   static String get classCreate => _endpoint('class');
   static String classDelete(int classId) => _endpoint('class/$classId');
   static String get classScheduleSpecial => _endpoint('class-schedule/special');
   static String get classScheduleActive => _endpoint('class-schedule/active');
+  static String classScheduleMine(String date) =>
+      _endpoint('class-schedule/mine?date=$date');
   static String get classScheduleClosed => _endpoint('class-schedule/closed');
   static String get roomToken => _endpoint('room/token');
 

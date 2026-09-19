@@ -5,6 +5,7 @@ import 'package:ofocus/layouts/app_avatar.dart';
 import 'package:ofocus/layouts/app_header.dart';
 import 'package:ofocus/layouts/app_page_scaffold.dart';
 import 'package:ofocus/layouts/app_version_footer.dart';
+import 'package:ofocus/screens/change_password_screen.dart';
 import 'package:ofocus/services/avatar_picker_service.dart';
 import 'package:ofocus/services/avatar_service.dart';
 import 'package:ofocus/services/session_manager.dart';
@@ -117,6 +118,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _openChangePassword() async {
+    final message = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => ChangePasswordScreen(
+          sessionManager: widget.sessionManager,
+        ),
+      ),
+    );
+
+    if (!mounted || message == null) return;
+    _showSnackBar(message);
+  }
+
   Future<void> _showPermissionDialog() async {
     final openSettings = await showDialog<bool>(
       context: context,
@@ -196,13 +210,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                 ),
               ),
-              const _MenuItemData(
+              _MenuItemData(
                 icon: '304b1',
                 iconBg: AppColors.surfaceMuted,
                 title: 'Bảo mật & Đổi mật khẩu',
                 subtitle: '2FA đang bảo vệ',
                 subtitleColor: AppColors.success,
                 showStatusDot: true,
+                onTap: _openChangePassword,
               ),
               const _MenuItemData(
                 icon: 'cca16',
@@ -667,6 +682,7 @@ class _MenuItemData {
     this.subtitleColor,
     this.showStatusDot = false,
     this.trailing,
+    this.onTap,
   });
 
   final String icon;
@@ -676,6 +692,7 @@ class _MenuItemData {
   final Color? subtitleColor;
   final bool showStatusDot;
   final Widget? trailing;
+  final VoidCallback? onTap;
 }
 
 class _MenuSection extends StatelessWidget {
@@ -740,7 +757,7 @@ class _MenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final content = Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
@@ -808,6 +825,13 @@ class _MenuRow extends StatelessWidget {
           item.trailing ?? _ProfileSvgIcon('6fd09', width: 6.17, height: 10),
         ],
       ),
+    );
+
+    if (item.onTap == null) return content;
+
+    return InkWell(
+      onTap: item.onTap,
+      child: content,
     );
   }
 }

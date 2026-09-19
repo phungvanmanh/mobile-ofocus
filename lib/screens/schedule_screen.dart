@@ -1,22 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:ofocus/router/app_router.dart';
 import 'package:ofocus/layouts/app_header.dart';
 import 'package:ofocus/layouts/app_page_scaffold.dart';
+import 'package:ofocus/models/daily_class_schedule.dart';
+import 'package:ofocus/services/class_service.dart';
+import 'package:ofocus/services/session_manager.dart';
 import 'package:ofocus/theme/app_colors.dart';
 
 class ScheduleScreen extends StatefulWidget {
-  const ScheduleScreen({super.key});
+  const ScheduleScreen({
+    super.key,
+    required this.sessionManager,
+    this.refreshToken,
+  });
+
+  final SessionManager sessionManager;
+  final int? refreshToken;
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
-  int _modeIndex = 0;
   DateTime _weekStart = _mondayOfWeek(DateTime.now());
   int? _manualDayIndex;
+  late final ClassService _classService;
+
+  List<DailyClassSchedule> _schedules = const [];
+  String? _loadedDateKey;
+  String? _loadingDateKey;
+  String? _scheduleError;
+  int _lastLoadedRefreshToken = 0;
+
+  final Map<String, List<DailyClassSchedule>> _scheduleCache = {};
 
   static const _weekDayLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
   static const _weekendIndices = {5, 6};
@@ -39,8 +56,111 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return null;
   }
 
+  int get _refreshToken => widget.refreshToken ?? 0;
+
   int get _activeDayIndex =>
       _manualDayIndex ?? _todayIndexInWeek(_weekStart) ?? 0;
+
+  DateTime get _selectedDate {
+    final day = _weekStart.add(Duration(days: _activeDayIndex));
+    return DateTime(day.year, day.month, day.day);
+  }
+
+  String get _selectedDateKey => ClassService.formatApiDate(_selectedDate);
+
+  bool get _isSelectedToday => _isSameDay(_selectedDate, DateTime.now());
+
+  String get _sessionCountLabel {
+    if (_loadingDateKey == _selectedDateKey) {
+      return 'Đang tải...';
+    }
+    final count = _schedules.length;
+    if (count == 0) {
+      return _isSelectedToday ? 'Không có buổi hôm nay' : 'Không có buổi';
+    }
+    return _isSelectedToday ? '$count buổi hôm nay' : '$count buổi';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _classService = ClassService(sessionManager: widget.sessionManager);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeLoadForRefreshToken();
+      _loadSchedulesForSelectedDate();
+    });
+  }
+
+  @override
+  void didUpdateWidget(ScheduleScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _maybeLoadForRefreshToken();
+  }
+
+  void _maybeLoadForRefreshToken() {
+    final token = _refreshToken;
+    if (token <= 0 || token == _lastLoadedRefreshToken) return;
+    _lastLoadedRefreshToken = token;
+    _scheduleCache.remove(_selectedDateKey);
+    _loadSchedulesForSelectedDate(force: true);
+  }
+
+  static bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  Future<void> _loadSchedulesForSelectedDate({bool force = false}) async {
+    final dateKey = _selectedDateKey;
+    if (_loadingDateKey == dateKey) return;
+
+    if (!force && _loadedDateKey == dateKey) return;
+
+    final cached = _scheduleCache[dateKey];
+    if (!force && cached != null) {
+      setState(() {
+        _loadedDateKey = dateKey;
+        _schedules = cached;
+        _scheduleError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingDateKey = dateKey;
+      _scheduleError = null;
+    });
+
+    final result = await _classService.fetchMySchedulesByDate(_selectedDate);
+    if (!mounted || _selectedDateKey != dateKey) return;
+
+    setState(() {
+      _loadingDateKey = null;
+      if (result.isSuccess) {
+        _loadedDateKey = dateKey;
+        _schedules = result.schedules;
+        _scheduleCache[dateKey] = result.schedules;
+        _scheduleError = null;
+      } else {
+        _scheduleError = result.errorMessage ?? 'Không thể tải lịch học';
+        _schedules = const [];
+      }
+    });
+  }
+
+  void _selectDay(int index) {
+    final nextDay = _weekStart.add(Duration(days: index));
+    final nextDateKey = ClassService.formatApiDate(
+      DateTime(nextDay.year, nextDay.month, nextDay.day),
+    );
+    if (_loadedDateKey == nextDateKey && _loadingDateKey != nextDateKey) {
+      if (_manualDayIndex != index) {
+        setState(() => _manualDayIndex = index);
+      }
+      return;
+    }
+    setState(() => _manualDayIndex = index);
+    _loadSchedulesForSelectedDate();
+  }
 
   static int _isoWeekNumber(DateTime date) {
     final thursday = date.add(Duration(days: 4 - date.weekday));
@@ -72,6 +192,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       _weekStart = _weekStart.add(Duration(days: 7 * deltaWeeks));
       _manualDayIndex = null;
     });
+    _loadSchedulesForSelectedDate();
   }
 
   @override
@@ -193,8 +314,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   dates: _weekDates,
                   weekendIndices: _weekendIndices,
                   selectedIndex: _activeDayIndex,
-                  onSelected: (index) =>
-                      setState(() => _manualDayIndex = index),
+                  onSelected: _selectDay,
                 ),
               ],
             ),
@@ -234,11 +354,26 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         color: AppColors.successLight.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(999),
                       ),
+                      child: Text(
+                        _sessionCountLabel,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.24,
+                          color: AppColors.success,
+                        ),
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                const _ScheduleTimeline(),
+                _ScheduleTimeline(
+                  loading: _loadingDateKey == _selectedDateKey,
+                  error: _scheduleError,
+                  schedules: _schedules,
+                  onRetry: () =>
+                      _loadSchedulesForSelectedDate(force: true),
+                ),
               ],
             ),
           ),
@@ -444,10 +579,69 @@ class _WeekStrip extends StatelessWidget {
 }
 
 class _ScheduleTimeline extends StatelessWidget {
-  const _ScheduleTimeline();
+  const _ScheduleTimeline({
+    required this.loading,
+    required this.schedules,
+    this.error,
+    this.onRetry,
+  });
+
+  final bool loading;
+  final String? error;
+  final List<DailyClassSchedule> schedules;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Text(
+              error!,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: AppColors.error,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: onRetry,
+              child: const Text('Thử lại'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (schedules.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: Center(
+          child: Text(
+            'Không có lịch học trong ngày này',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final now = DateTime.now();
+
     return Stack(
       children: [
         Positioned(
@@ -457,12 +651,14 @@ class _ScheduleTimeline extends StatelessWidget {
           child: Container(width: 2, color: AppColors.surfaceBorder),
         ),
         Column(
-          children: const [
-            _LiveTimelineCard(),
-            SizedBox(height: 24),
-            _UpcomingTodayCard(),
-            SizedBox(height: 24),
-            _FutureTimelineCard(),
+          children: [
+            for (var i = 0; i < schedules.length; i++) ...[
+              _ScheduleTimelineItem(
+                schedule: schedules[i],
+                status: schedules[i].statusAt(now),
+              ),
+              if (i < schedules.length - 1) const SizedBox(height: 24),
+            ],
           ],
         ),
       ],
@@ -470,11 +666,24 @@ class _ScheduleTimeline extends StatelessWidget {
   }
 }
 
-class _LiveTimelineCard extends StatelessWidget {
-  const _LiveTimelineCard();
+class _ScheduleTimelineItem extends StatelessWidget {
+  const _ScheduleTimelineItem({
+    required this.schedule,
+    required this.status,
+  });
+
+  final DailyClassSchedule schedule;
+  final DailyScheduleStatus status;
 
   @override
   Widget build(BuildContext context) {
+    final isLive = status == DailyScheduleStatus.live;
+    final isUpcoming = status == DailyScheduleStatus.upcoming;
+
+    final dotColor = isLive
+        ? AppColors.success
+        : (isUpcoming ? AppColors.primaryIndigo : AppColors.surfaceBorder);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -483,274 +692,75 @@ class _LiveTimelineCard extends StatelessWidget {
             Container(
               width: 24,
               height: 24,
-              decoration: const BoxDecoration(
-                color: AppColors.success,
+              decoration: BoxDecoration(
+                color: dotColor,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.shadowMedium,
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ],
+                boxShadow: isLive
+                    ? const [
+                        BoxShadow(
+                          color: AppColors.shadowMedium,
+                          blurRadius: 6,
+                          offset: Offset(0, 2),
+                        ),
+                      ]
+                    : const [
+                        BoxShadow(
+                          color: AppColors.shadow,
+                          blurRadius: 1,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
               ),
               child: Center(
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+                child: isLive
+                    ? Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      )
+                    : Icon(
+                        isUpcoming
+                            ? Icons.schedule
+                            : Icons.calendar_today_outlined,
+                        size: 12,
+                        color: isUpcoming
+                            ? Colors.white
+                            : AppColors.textSecondary,
+                      ),
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              '19:30 - 21:00',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.14,
-                color: AppColors.textPrimary,
+            Expanded(
+              child: Text(
+                schedule.timeRange,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.14,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.success,
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadow,
-                    blurRadius: 1,
-                    offset: Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'ĐANG DIỄN RA',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.only(left: 36),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
+            if (isLive)
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.shadowMedium,
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
+                  color: AppColors.successLight.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(999),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Lập trình React Native &\nThiết kế UI Mobile',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: const [
-                        _MetaPill(label: 'Buổi 9/16'),
-                        _MetaPill(label: 'Phòng: Edu-8921'),
-                        _MetaPill(label: '38 bạn đang online'),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Tiến độ khóa học',
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        Text(
-                          '56%',
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: const LinearProgressIndicator(
-                        value: 0.56,
-                        minHeight: 6,
-                        backgroundColor: AppColors.surfaceBorder,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context)
-                              .push(AppRoutes.toClassroomWaiting());
-                        },
-                        icon: SvgPicture.asset(
-                          'assets/home/icons/92226.svg',
-                          width: 14,
-                          height: 14,
-                          colorFilter: const ColorFilter.mode(
-                            Colors.white,
-                            BlendMode.srcIn,
-                          ),
-                        ),
-                        label: Text(
-                          'Tham gia vào lớp ngay',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.14,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: Colors.white,
-                          elevation: 4,
-                          shadowColor: AppColors.shadowMedium,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  width: 112,
-                  height: 112,
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(999),
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topRight,
-                      end: Alignment.bottomLeft,
-                      colors: [
-                        AppColors.successLight.withValues(alpha: 0.2),
-                        AppColors.successLight.withValues(alpha: 0),
-                      ],
-                    ),
+                child: Text(
+                  'ĐANG DIỄN RA',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: AppColors.success,
                   ),
                 ),
               ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _UpcomingTodayCard extends StatelessWidget {
-  const _UpcomingTodayCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: AppColors.primaryIndigo,
-                shape: BoxShape.circle,
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadow,
-                    blurRadius: 1,
-                    offset: Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.schedule, size: 12, color: Colors.white),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '20:30 - 21:45',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.warning,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                'Bắt đầu sau 45 phút',
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                  color: AppColors.warningOn,
-                ),
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 4),
@@ -762,11 +772,13 @@ class _UpcomingTodayCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
+              boxShadow: [
                 BoxShadow(
-                  color: AppColors.shadow,
-                  blurRadius: 1,
-                  offset: Offset(0, 1),
+                  color: isLive
+                      ? AppColors.shadowMedium
+                      : AppColors.shadow,
+                  blurRadius: isLive ? 6 : 1,
+                  offset: Offset(0, isLive ? 2 : 1),
                 ),
               ],
             ),
@@ -774,7 +786,7 @@ class _UpcomingTodayCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Tiếng Anh Giao Tiếp\nDoanh Nghiệp',
+                  schedule.className,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -782,194 +794,10 @@ class _UpcomingTodayCard extends StatelessWidget {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Text(
-                      'Buổi 8/12',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      'Cô Sarah Miller',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SecondaryButton(
-                        backgroundColor: AppColors.surface,
-                        foregroundColor: AppColors.primary,
-                        label: 'Nhắc trước 10 phút',
-                        icon: Icons.notifications_none,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _SecondaryButton(
-                        backgroundColor: AppColors.surfaceAccent,
-                        foregroundColor: AppColors.primaryDeep,
-                        label: 'Link chuẩn bị',
-                        icon: Icons.link,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _FutureTimelineCard extends StatelessWidget {
-  const _FutureTimelineCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceBorder,
-                shape: BoxShape.circle,
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadow,
-                    blurRadius: 1,
-                    offset: Offset(0, 1),
-                  ),
+                if (schedule.instructorName.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _MetaPill(label: schedule.instructorName),
                 ],
-              ),
-              child: Icon(
-                Icons.calendar_today_outlined,
-                size: 11,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '19:30 - 21:00',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceBorder,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                'Thứ Năm, 15/10',
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.5,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.only(left: 36),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: AppColors.shadow,
-                  blurRadius: 1,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Thiết kế UI/UX Thực chiến\nvới Figma',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Text(
-                      'Buổi 5/10',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      'Thầy Quốc Bảo',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 40,
-                  child: TextButton(
-                    onPressed: () {},
-                    style: TextButton.styleFrom(
-                      backgroundColor: AppColors.surface,
-                      foregroundColor: AppColors.textSecondary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'Xem bài tập trước buổi học (File .fig)',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
