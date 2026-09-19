@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:ofocus/config/google_auth_config.dart';
 
@@ -12,7 +15,19 @@ class GoogleAuthService {
     if (_initialized) return;
 
     final serverClientId = GoogleAuthConfig.serverClientId;
+    final iosClientId = GoogleAuthConfig.iosClientId;
+    final useIosClient =
+        !kIsWeb && (Platform.isIOS || Platform.isMacOS) && iosClientId.isNotEmpty;
+
+    if (!kIsWeb && (Platform.isIOS || Platform.isMacOS) && iosClientId.isEmpty) {
+      debugPrint(
+        '[GoogleAuth] iOS: thiếu GOOGLE_IOS_CLIENT_ID / GIDClientID trong Info.plist. '
+        'Xem scripts/configure_google_signin_ios.ps1',
+      );
+    }
+
     await GoogleSignIn.instance.initialize(
+      clientId: useIosClient ? iosClientId : null,
       serverClientId: serverClientId.isEmpty ? null : serverClientId,
     );
     _initialized = true;
@@ -47,7 +62,14 @@ class GoogleAuthService {
       return GoogleSignInResult.failure(
         e.description ?? 'Đăng nhập Google thất bại',
       );
-    } catch (_) {
+    } catch (error) {
+      debugPrint('[GoogleAuth] signIn error: $error');
+      if (!kIsWeb && Platform.isIOS && GoogleAuthConfig.iosClientId.isEmpty) {
+        return GoogleSignInResult.failure(
+          'Google Sign-In iOS chưa cấu hình. Tạo OAuth client iOS trên Google Cloud '
+          '(Bundle ID com.example.ofocus) rồi chạy scripts/configure_google_signin_ios.ps1',
+        );
+      }
       return GoogleSignInResult.failure(
         'Không thể đăng nhập bằng Google. Vui lòng thử lại.',
       );
